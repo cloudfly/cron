@@ -3,6 +3,8 @@ package cron
 
 import (
 	"sort"
+	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -10,6 +12,7 @@ import (
 // specified by the schedule. It may be started, stopped, and the entries may
 // be inspected while running.
 type Cron struct {
+	sync.RWMutex
 	entries  []*Entry
 	stop     chan struct{}
 	add      chan *Entry
@@ -32,7 +35,7 @@ type Schedule interface {
 }
 
 // EntryID identifies an entry within a Cron instance
-type EntryID int
+type EntryID int64
 
 // Entry consists of a schedule and the func to execute on that schedule.
 type Entry struct {
@@ -109,14 +112,16 @@ func (c *Cron) AddJob(spec string, cmd Job) (EntryID, error) {
 
 // Schedule adds a Job to the Cron to be run on the given schedule.
 func (c *Cron) Schedule(schedule Schedule, cmd Job) EntryID {
-	c.nextID++
+	atomic.StoreInt64((*int64)(&c.nextID), int64(c.nextID)+1)
 	entry := &Entry{
 		ID:       c.nextID,
 		Schedule: schedule,
 		Job:      cmd,
 	}
 	if !c.running {
+		c.Lock()
 		c.entries = append(c.entries, entry)
+		c.Unlock()
 	} else {
 		c.add <- entry
 	}
@@ -224,6 +229,8 @@ func (c *Cron) Stop() {
 
 // entrySnapshot returns a copy of the current cron entry list.
 func (c *Cron) entrySnapshot() []Entry {
+	c.RLock()
+	defer c.RUnlock()
 	var entries = make([]Entry, len(c.entries))
 	for i, e := range c.entries {
 		entries[i] = *e
@@ -232,6 +239,8 @@ func (c *Cron) entrySnapshot() []Entry {
 }
 
 func (c *Cron) removeEntry(id EntryID) {
+	c.Lock()
+	defer c.Unlock()
 	var entries []*Entry
 	for _, e := range c.entries {
 		if e.ID != id {
