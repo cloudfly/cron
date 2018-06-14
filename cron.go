@@ -24,7 +24,7 @@ type Cron struct {
 
 // Job is an interface for submitted cron jobs.
 type Job interface {
-	Run()
+	Run(prev, current, next time.Time)
 }
 
 // Schedule describes a job's duty cycle.
@@ -92,12 +92,12 @@ func New() *Cron {
 }
 
 // FuncJob is a wrapper that turns a func() into a cron.Job
-type FuncJob func()
+type FuncJob func(prev, current, next time.Time)
 
-func (f FuncJob) Run() { f() }
+func (f FuncJob) Run(prev, current, next time.Time) { f(prev, current, next) }
 
 // AddFunc adds a func to the Cron to be run on the given schedule.
-func (c *Cron) AddFunc(spec string, cmd func()) (EntryID, error) {
+func (c *Cron) AddFunc(spec string, cmd func(prev, current, next time.Time)) (EntryID, error) {
 	return c.AddJob(spec, FuncJob(cmd))
 }
 
@@ -194,9 +194,12 @@ func (c *Cron) run() {
 				if e.Next != effective {
 					break
 				}
-				go e.Job.Run()
+
+				prev := e.Prev
 				e.Prev = e.Next
 				e.Next = e.Schedule.Next(effective)
+				go e.Job.Run(prev, now, e.Next)
+
 			}
 			continue
 
