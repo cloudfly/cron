@@ -198,7 +198,7 @@ func (c *Cron) run() {
 				prev := e.Prev
 				e.Prev = e.Next
 				e.Next = e.Schedule.Next(effective)
-				go e.Job.Run(prev, now, e.Next)
+				go e.Job.Run(prev, now.Truncate(time.Second), e.Next)
 
 			}
 			continue
